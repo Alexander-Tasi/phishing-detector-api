@@ -1,7 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from transformers import pipeline
 
-app = FastAPI(title="釣魚郵件偵測 API")
+app = FastAPI()
+
+#載入輕量級的垃圾郵件分類模型
+classifier = pipeline("text-classification", model="mrm8488/bert-tiny-finetuned-sms-spam-detection")
 
 class EmailRequest(BaseModel):
     sender_email: str
@@ -9,35 +13,30 @@ class EmailRequest(BaseModel):
 
 
 @app.get("/")
-def read_root():
-    return {"message": "歡迎來到 AI 釣魚郵件偵測 API！系統運作正常。"}
+def health_check():
+    return {"status": "ok", "message": "AI Phishing API is running on Hugging Face Spaces!"}
 
 
 @app.post("/predict")
 def predict_phishing(email: EmailRequest):
+    try:
+        #將信件內容丟給AI模型進行預測
+        result = classifier(email.content)[0]
 
-    suspicious_keywords = ["密碼", "銀行帳號", "中獎", "立即點擊", "帳戶凍結"]
-    free_email_domains = ["@gmail.com", "@yahoo.com", "@hotmail.com"]
+        #根據預測結果決定警報層級
+        label = result['label']
+        score = result['score']
 
-    has_suspicious_keyword = any(keyword in email.content for keyword in suspicious_keywords)
+        if label == "LABEL_1" and score > 0.7: #LABEL_1 通常代表 Spam/Phishing
+            status = "Critical"
+        else:
+            status = "Safe"
 
-    is_free_email = any(domain in email.sender_email for domain in free_email_domains)
-
-    if has_suspicious_keyword and is_free_email:
         return{
-            "status": "critical",
-            "prediction": "極度危險！免費信箱要求敏感操作，高機率為釣魚郵件!",
-            "sender_analyzed": email.sender_email
+            "status": status,
+            "ai_confidence_score": round(score, 4),
+            "sender": email.sender_email,
+            "content_length": len(email.content)
         }
-    elif has_suspicious_keyword:
-        return{
-            "status": "warning",
-            "prediction": "警告：包含敏感關鍵字，請小心確認寄件者身分。",
-            "sender_analyzed": email.sender_email
-        }
-    else:
-        return{
-            "status": "safe",
-            "prediction": "看起來安全",
-            "sender_analyzed": email.sender_email
-        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
