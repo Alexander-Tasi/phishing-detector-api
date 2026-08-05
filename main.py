@@ -4,9 +4,10 @@ from transformers import pipeline
 
 app = FastAPI()
 
-#載入輕量級的垃圾郵件分類模型
+#載入輕量級的AI垃圾郵件分類模型
 classifier = pipeline("text-classification", model="mrm8488/bert-tiny-finetuned-sms-spam-detection")
 
+#繼承BaseModel 定義外部傳入的JSON格式(確保資料格式正確)
 class EmailRequest(BaseModel):
     sender_email: str
     content: str
